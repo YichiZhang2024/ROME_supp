@@ -1,0 +1,215 @@
+---
+title: "Region of Measurement Equivalence (ROME) for Categorical Items"
+date: "06/12/2021"
+output: 
+  html_document:
+    toc: TRUE
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+```
+
+
+```{r, include = FALSE}
+library(tidyr)
+library(psych)
+library(lavaan)
+library(coda)
+library(MplusAutomation)
+library(tidyverse)
+library(ggplot2)
+library(knitr)
+theme_set(theme_classic() +
+            theme(panel.grid.major.y = element_line(color = "grey92")))
+```
+
+# Read In Data
+
+This example uses a nationally representative sample of 2002 10th graders from the Educational Longitudinal Study of 2002 (ELS: 2002), which was collected by the National Center for Education Statistics (US Department of Education, 2004).  ELS: 2002 follows student through high school and postsecondary years and includes extensive student survey items and also items from parents, teachers, and school administrators.  
+
+```{r}
+# Import dataset
+els <- haven::read_sav("../../data/New ELS variable version 12.11.19.sav")
+```
+
+# Step 1: Set ROME for Group Differences
+
+The first step is to preset the Region of Measurement Equivalence (ROME). Since there are no substantive guidelines for the cutoff values, we set the ROME following the convention suggested by Kruschke (2011):$[- 0.1s_{p}, 0.1s{p}]$. Here $s{p}$ is defined as the pooled standard deviation of the observed sum scores of the psychological test being evaluated. It can be calculated from the following equation $s_{p}=\frac{(n_{k}-1)s_{k}^{2} + (n_{j}-1)s_{j}^{2}}{n_{k}+n_{j}-2}$
+
+```{r, set ROME}
+# Select female participants
+els_fe_n <- els[(els$Male == 0),]
+# Select male participants
+els_ma_n <- els[(els$Male == 1),]
+# Compute total scores for each female participant
+sum_tosc_fe_n <-rowSums(subset(els_fe_n, select = c(BYS89B, BYS89L, BYS89R, BYS89A, BYS89U)))
+sum_tosc_fe_n <- describe(sum_tosc_fe_n)
+# Number of female participants
+n_female <- sum_tosc_fe_n$n
+# Standard deviation for female group
+sd_female <-sum_tosc_fe_n$sd
+# Compute total scores for each male participant
+sum_tosc_ma_n <-rowSums(subset(els_ma_n, select = c(BYS89B, BYS89L, BYS89R, BYS89A, BYS89U)))
+sum_tosc_ma_n <-describe(sum_tosc_ma_n)
+# Number of male participants
+n_male <- sum_tosc_ma_n$n
+# Standard deviation for male group
+sd_male <-sum_tosc_ma_n$sd
+# Calculate the pooled standard deviation of the observed sum scores
+sd_pool <- sqrt(((n_female-1)*(sd_female^2)+(n_male-1)*(sd_male^2))/(n_female+n_male-2))
+sd_pool
+```
+
+# Step 2: Obtain Parameter Posterior Distributions
+
+## Read data from Mplus output
+
+The second step is to identify non-invariant items. We used categorical CFA to test measurement invariance of the math self-efficacy scale across gender in Mplus, and exported the MCMC draws as a data file. Below we import the draws. Note Mplus export the burnin (first half of each chain), so we only keep the second half of each chain. 
+
+```{r, import data from Mplus}
+# Parameter
+posd <- read.table("mathse_bayestest2.dat", header = FALSE)
+# Be careful of the parameters, check the parameter tables from the Mplus output
+draws_pre <- posd %>%
+  select("chain" =1,  "iteration" = 2, "loadings"=c(3,5,7,8,9), "loadings5_g2" = 11, "factor mean"= 12, "factor variance" = 13, "threshold_g1"= 14:28, "threshold_g2" = 29:40)
+table(draws_pre$chain)
+# Take out burnins
+draws <- draws_pre %>% 
+  group_by(`chain`) %>%
+  filter(row_number() > floor(n()/2))
+table(draws$chain)
+```
+
+# Step 3: Compute the Expected Difference in Total Scores 
+
+The third step is to compute the expected difference in total scores conditioned on $\eta$ and obtain its 95% HPDI.
+
+```{r}
+# latent self-efficacy 
+eta <- 1
+# number of categories of items
+num_categories <- 4
+# extract loadings from the MCMC draws
+## female
+load_f <- draws[, str_which(names(draws), "loadings")[1:5]]
+## male
+load_m <- draws[, str_which(names(draws), "loadings")[-5]]
+# extract the first threshold for all items from the MCMC draws
+thre1_f <- draws[, str_which(names(draws), "threshold_g1")[c(1,4,7,10,13)]]
+# extract the second threshold for all items from the MCMC draws
+thre2_f <- draws[, str_which(names(draws), "threshold_g1")[c(2,5,8,11,14)]]
+# extract the second threshold for all items from the MCMC draws
+thre3_f <- draws[, str_which(names(draws), "threshold_g1")[c(3,6,9,12,15)]]
+# same for male
+thre1_m <- draws[, str_which(names(draws), "threshold")[c(16,19,7,22,25)]]
+thre2_m <- draws[, str_which(names(draws), "threshold")[c(17,20,8,23,26)]]
+thre3_m <- draws[, str_which(names(draws), "threshold")[c(18,21,9,24,27)]]
+```
+
+```{r, compute total scores}
+# functions to calculate the expected total score
+tot <- function(eta, thres1, thres2, thres3, 
+                loading, num_categories = 4) {
+  p1 <- sapply((thres1 - loading * eta), pnorm)
+  # p2 <- pnorm(thres2 - loading * eta)
+  p2 <- sapply((thres2 - loading * eta), pnorm)
+  p3 <- sapply((thres3 - loading * eta), pnorm)
+  rowSums(num_categories - (p1 + p2 + p3))
+}
+# expected total scores for female
+total_f <- tot(eta = eta, thres1 = thre1_f, thres2 = thre2_f,thres3 = thre3_f, loading = load_f, num_categories = 4)
+describe(total_f)
+# expected total scores for male
+total_m <- tot(eta = eta, thres1 = thre1_m, thres2 = thre2_m,thres3 = thre3_m, loading = load_m, num_categories = 4)
+# differences in expected total scores
+total_diff <- total_f-total_m
+describe(total_diff)
+hist(total_diff)
+```
+
+```{r, obtain HPDI}
+# compute HPDI for female
+compute_to_fe_s <- function(eta, load = load_f, thres1 = thre1_f, thres2 = thre2_f, thres3 = thre3_f, prob = 0.95) {
+  total_f <- tot(eta, thres1, thres2, thres3, loading = load)
+  # Compute HPDI:
+  hpdi <- coda::HPDinterval(coda::as.mcmc(total_f), prob = prob)
+  # Return posterior means and HPDI
+  tibble(
+    eta = eta, 
+    mean = mean(total_f), 
+    sd = sd(total_f),
+    ll = hpdi[1], 
+    ul = hpdi[2]
+  )
+}
+# test when eta =1
+compute_to_fe_s(1)
+# compute HPDI for male
+compute_to_ma_s <- function(eta, load = load_m, thres1 = thre1_m, thres2 = thre2_m, thres3 = thre3_m, prob = 0.95) {
+  total_m <- tot(eta, thres1, thres2, thres3, loading = load)
+  # Compute HPDI:
+  hpdi <- coda::HPDinterval(coda::as.mcmc(total_m), prob = prob)
+  # Return posterior means and HPDI
+  tibble(
+    eta = eta, 
+    mean = mean(total_m), 
+    sd = sd(total_m),
+    ll = hpdi[1], 
+    ul = hpdi[2]
+  )
+}
+# test when eta =1
+compute_to_ma_s(1)
+# compute HPDI for expected difference
+compute_todiffnew_s <- function(eta, loading_f = load_f, thres1_f = thre1_f, thres2_f = thre2_f, thres3_f = thre3_f, thres1_m = thre1_m, thres2_m = thre2_m,thres3_m = thre3_m, loading_m = load_m, prob = 0.95) {
+  total_f <- tot(eta = eta, thres1 = thres1_f, thres2 = thres2_f,thres3 = thres3_f, loading = loading_f)
+  total_m <-  tot( eta = eta, thres1 = thres1_m, thres2 = thres2_m,thres3 = thres3_f, loading = loading_m)
+  total_diff <- total_f - total_m
+  # Compute HPDI:
+  hpdi <- coda::HPDinterval(coda::as.mcmc(total_diff), prob = prob)
+  # Return posterior means and HPDI
+  tibble(
+    eta = eta,
+    mean = mean(total_diff), 
+    sd = sd(total_diff),
+    ll = hpdi[1], 
+    ul = hpdi[2]
+  )
+}
+compute_todiffnew_s(0)
+compute_todiffnew_s(2)
+compute_todiffnew_s(-2)
+```
+# Step 4: Compare the 95% HPDI with ROME and Determine Measurement Invariance
+
+Two graphs were generated from this section. One is the expected total test scores for female and male (female score - male score), the other is the expected group differences in total test scores. Although there is a slight difference in total scores between females and males with the same trait level of math self-efficacy on this scale, it is practically negligible because the differences across the range of scores are entirely within the preset ROME [-0.412, 0.412]. 
+
+```{r, graphs}
+# Randomly draw a large number of etas
+etas <- seq(-2, 2, length.out = 501)  
+df_post_fe_s <- map_df(etas, compute_to_fe_s)
+df_post_ma_s <- map_df(etas, compute_to_ma_s)
+diff_postnew_s <- map_df(etas, compute_todiffnew_s)
+# Plot the results
+ggplot(df_post_fe_s, aes(x = eta, y = mean)) +
+  ylab(labs(y="Expected total test scores"))+
+  geom_ribbon(aes(ymin = ll, ymax = ul), alpha = .3) + 
+  geom_ribbon(data = df_post_ma_s, aes(ymin = ll, ymax = ul), alpha = .3, fill = "red") + 
+  geom_line(data = df_post_ma_s, aes(color = "Male"))+  
+  geom_line(data = df_post_fe_s, aes(color = "Female"))+
+  ggtitle("Total Test Scores for Male and Female")+
+  theme(plot.title = element_text(hjust = 0.5), axis.line = element_line(color ="black", size = 0.3))+
+  scale_colour_manual("Gender", values = c("Male"="red", "Female"="black"),labels = c("Female", "Male")) 
+ggplot(diff_postnew_s, aes(x = eta, y = mean)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), alpha = .3, fill = "grey")+
+  geom_line(data = diff_postnew_s, col = "orange")+
+  geom_hline(yintercept = 0.412, col = "red", linetype = "dashed")+
+  geom_hline(yintercept = -0.412, col = "red", linetype = "dashed")+
+  ggtitle("Expected Group Differences in Total Test Scores")+
+  labs(y="Group Difference")+
+  theme(plot.title = element_text(hjust = 0.5), axis.line = element_line(color ="black", size = 0.3))
+```
+
+

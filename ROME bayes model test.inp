@@ -1,0 +1,65 @@
+  
+  TITLE:  ROME bayesian model mathse gender;
+    DATA:   FILE = ../../../data/math_se_g10_r.dat;
+    VARIABLE:
+      NAMES = sch_id male ses_grp y1-y5;
+      USEVAR = y1-y5;      ! used variables
+      CATEGORICAL = y1-y5; ! categorical variables
+      MISSING = ALL(-99);  ! specify missing data coding
+      CLASSES = c(2);      ! assign names to the latent variable and specify the number of latent classes
+      KNOWNCLASS = c(male = 0-1); ! grouping variable
+ ANALYSIS:
+    TYPE = MIXTURE;        ! mixture model
+    Estimator = BAYES;     ! Bayesian analysis
+    Bseed = 202106;        ! set seed
+    CHAINS = 3;            ! number of chains
+    BCONVERGENCE = .005;   ! convergence criterion
+    BITERATIONS = 500000 (10000); ! set the minimum number of iterations to be 10,000 and the maximum to be 500,000
+    MODEL = ALLFREE;      ! all parameters are free except the factor means in one of the groups
+    PROCESS = 12;         ! number of processors
+MODEL: %OVERALL%
+        f1 BY y1-y5*2.5 (L1-L5);  !specify factor loadings and set start up values at 2.5
+        [f1@0];                   !latent factor mean was set to 0
+        f1@1;                     !latent factor variance was set to 1
+        f2 BY y1*1.1 (L6)         !specify covariance between item 1 and item 2 by adding another latent factor and constrain the loadings between items.
+              y2*1.1 (L6);
+        [f2@0];
+        f2@1;
+        f1 with f2@0;
+        f3 BY y2*0.8 (L7)
+              y3*0.8 (L7);
+        [f3@0];
+        f3@1;
+        f1 with f3@0;
+        f2 with f3@0;
+        [y1$1*-3.1 y1$2*0.6 y1$3*2.6] (T1-T3);  ! specify thresholds
+        [y2$1*-2.4 y2$2*1.0 y2$3*3.6] (T4-T6);
+        [y3$1*-2.5 y3$2*0.7 y3$3*3.1] (T7-T9);
+        [y4$1*-3.0 y4$2*0.2 y4$3*2.5] (T10-T12);
+        [y5$1*-3.0 y5$2*0.1 y5$3*2.3] (T13-T15);
+        %c#2%                                   ! group 2
+        f1 BY y1-y5*2.5 (L1-L4 L5m);
+        [f1*0.3];
+        f1*1;
+        f2 BY y1*1.1 (L6m) 
+              y2*1.1 (L6m);
+        [f2@0];
+        f2@1;
+        f1 with f2@0;
+        f3 BY y2*0.8 (L7) 
+              y3*0.8 (L7);
+        [f3@0];
+        f3@1;
+        f1 with f3@0;
+        f2 with f3@0;
+        [y1$1*-3.1 y1$2*0.6 y1$3*2.6] (T1m T2m T3m);
+        [y2$1*-2.4 y2$2*1.0 y2$3*3.6] (T4m T5m T6m);
+        [y3$1*-2.5 y3$2*0.7 y3$3*3.1] (T7-T9);
+        [y4$1*-3.0 y4$2*0.2 y4$3*2.5] (T10m T11m T12m);
+        [y5$1*-3.0 y5$2*0.1 y5$3*2.3] (T13m T14m T15m);
+  OUTPUT: TECH1 TECH4 TECH8;
+  PLOT: TYPE=PLOT2;
+  SAVEDATA:
+  SAVE = fs(200);
+  FILE = mathse_bayestest1.dat;
+  BPARAMETER=mathse_bayestest2.dat;   ! save posterior draws

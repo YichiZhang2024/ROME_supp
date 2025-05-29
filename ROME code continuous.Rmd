@@ -1,0 +1,395 @@
+---
+title:  "Region of Measurement Equivalence (ROME) for Continuous Indicators"
+date: "06/15/2021"
+output: 
+  html_document:
+    toc: TRUE
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE, message = FALSE)
+```
+
+```{r, include = FALSE}
+library(tidyverse)
+library(lavaan)
+library(psych)
+library(ggplot2)
+library(blavaan)
+library(knitr)
+theme_set(theme_classic() +
+            theme(panel.grid.major.y = element_line(color = "grey92")))
+```
+
+# Read In Data
+
+This example uses a nationally representative sample of 2002 10th graders from the Educational Longitudinal Study of 2002 (ELS: 2002), which was collected by the National Center for Education Statistics (US Department of Education, 2004).  ELS: 2002 follows student through high school and postsecondary years and includes extensive student survey items and also items from parents, teachers, and school administrators.  
+
+```{r}
+# Import dataset
+els <- haven::read_sav("../../data/New ELS variable version 12.11.19.sav")
+```
+
+# Fit the Frequentist Model
+
+In this part, conventional frequentist method was used to detect partial invariance. In this section, a single factor multigroup CFA model with five indicators was fit to data. As discussed in Schaefer (2009) and suggested by the modification indices, we freed two pairs of item covariances: item 1 (BYS89A) and item 2 (BYS89B), item2 (BYS89B) and item3 (BYS89L).
+
+```{r}
+# parallel analysis
+pa.els <- els%>%
+  select(BYS89A, BYS89B, BYS89L, BYS89R, BYS89U)%>%
+  fa.parallel(cor ="poly")
+# percentage of variance accounted for by each factor
+100*pa.els$fa.values/length(pa.els$fa.values)
+# Preliminary model
+model_o <-  'Math =~ BYS89A + BYS89B + BYS89L + BYS89R + BYS89U'
+# Convert variable "Male" to a factor
+els$Male_n <- as_factor(els$Male)
+# Fit the configural invariant model
+fit_o <- cfa(model_o,data =els, group ="Male_n", missing ='fiml', std.lv = TRUE)
+# check model fit
+#summary(fit_o, fit.measures = TRUE)
+modificationindices(fit_o, sort. = TRUE)
+# Define the model
+Model <- 'Math =~ BYS89A + BYS89B + BYS89L + BYS89R + BYS89U
+          BYS89A ~~ BYS89B
+          BYS89B ~~ BYS89L' 
+# Number of indicators
+n_ind <- 5
+fit <- cfa(Model,data =els, missing ='fiml', std.lv = TRUE)
+# summary(fit, fit.measures = TRUE)
+```
+
+## Find Non-invariant Items
+
+The second section focuses on finding non-invariant items. First, both the configural invariance model and weak invariance model were fit to data. The Chi-square difference test was significant,indicating some items were non-invariaant. 
+
+```{r}
+fit_cor_confi <- cfa(Model, data = els, group = "Male_n", missing='fiml', std.lv= TRUE)
+# summary(fit_cor_confi, fit.measures = TRUE)
+# modificationIndices(fit_cor_confi, sort. = TRUE)
+# Fit the weak invariant model
+fit_cor_weak <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", missing='fiml', std.lv= TRUE)
+# Get model fit information
+#summary(fit_cor_weak, fit.measures = TRUE)
+# Chi-square difference test
+lavTestLRT(fit_cor_confi, fit_cor_weak)
+```
+
+After conducting a series of Chi-square difference tests, item 5 (BYS89U) was found to be non-invariant.
+
+```{r}
+# fit partial weak invariance model
+fit_cor_weak_1 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89A"), missing = 'fiml', std.lv = TRUE)
+fit_cor_weak_2 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89B"),  missing = 'fiml', std.lv= TRUE)
+fit_cor_weak_3 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89L"),  missing = 'fiml', std.lv= TRUE)
+fit_cor_weak_4 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89R"),  missing = 'fiml',std.lv= TRUE)
+fit_cor_weak_5 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89U"),  missing='fiml', std.lv= TRUE)
+# chi-square difference test
+lavTestLRT(fit_cor_weak, fit_cor_weak_1)
+lavTestLRT(fit_cor_weak, fit_cor_weak_2)
+lavTestLRT(fit_cor_weak, fit_cor_weak_3)
+lavTestLRT(fit_cor_weak, fit_cor_weak_4)
+lavTestLRT(fit_cor_weak, fit_cor_weak_5)
+```
+
+```{r, results = 'hide'}
+# item 5 is noninvariant, continue searching 
+fit_cor_weak_51 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89U", "Math =~ BYS89A"),  missing='fiml', std.lv= TRUE)
+fit_cor_weak_52 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89U", "Math =~ BYS89B"),  missing='fiml', std.lv= TRUE)
+fit_cor_weak_53 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89U", "Math =~ BYS89L"),  missing='fiml', std.lv= TRUE)
+fit_cor_weak_54 <- cfa(Model, data = els, group = "Male_n", group.equal = "loadings", group.partial = c("Math =~ BYS89U", "Math =~ BYS89R"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_weak_5, fit_cor_weak_51)
+lavTestLRT(fit_cor_weak_5, fit_cor_weak_52)
+lavTestLRT(fit_cor_weak_5, fit_cor_weak_53)
+lavTestLRT(fit_cor_weak_5, fit_cor_weak_54)
+# get model summary
+# summary(fit_cor_weak_5, fit.measures = TRUE)
+```
+
+The conventional measurement invariance test continued, suggesting item 2(BYS89B), 4 (BYS89R) and 5 (BYS89U) have noninvariant intercepts across gender.
+
+```{r}
+# Fit the strong invariant model
+fit_cor_strong <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_strong, fit_cor_weak_5)
+```
+
+```{r}
+# Fit partial strong invariance models
+# Item2 is noninvariant
+fit_cor_strong_5i1 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89A ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i2 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i3 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89L ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i4<- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89R ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i5<- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89U ~ 1"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_strong_5i1,fit_cor_strong)
+lavTestLRT(fit_cor_strong_5i2,fit_cor_strong)
+lavTestLRT(fit_cor_strong_5i3,fit_cor_strong)
+lavTestLRT(fit_cor_strong_5i4,fit_cor_strong)
+lavTestLRT(fit_cor_strong_5i5,fit_cor_strong)
+# summary(fit_cor_strong_5i2, fit.measures = TRUE)
+```
+
+```{r, results = 'hide'}
+# Item 4 is noninvariant
+fit_cor_strong_5i21 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89A ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i23 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89L ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i24 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i25 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89U ~ 1"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_strong_5i21,fit_cor_strong_5i2)
+lavTestLRT(fit_cor_strong_5i23,fit_cor_strong_5i2)
+lavTestLRT(fit_cor_strong_5i24,fit_cor_strong_5i2)
+lavTestLRT(fit_cor_strong_5i25,fit_cor_strong_5i2)
+```
+
+```{r, results = 'hide'}
+# Item 5 is noninvariant
+fit_cor_strong_5i241 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89A ~1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i243 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89L ~1"),  missing='fiml', std.lv= TRUE)
+fit_cor_strong_5i245 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~1"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_strong_5i241,fit_cor_strong_5i24)
+lavTestLRT(fit_cor_strong_5i243,fit_cor_strong_5i24)
+lavTestLRT(fit_cor_strong_5i245,fit_cor_strong_5i24)
+# summary(fit_cor_strong_5i245, fit.measures = TRUE)
+```
+
+We further move to test unique factor variances and covariances. Results show items 4 and 5 have noninvariant unique factor variances. The covariance between item 1 and item 2 is noninvariant across gender.
+
+```{r, results = 'hide'}
+# Fit the partial strict invariant model (fix unique factor variances)
+fit_cor_stric_5i245 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_stric_5i245,fit_cor_strong_5i245)
+# searching for noninvariant unique factor variances
+# item 5
+fit_cor_stric_5i245u1 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1", "BYS89A ~~ BYS89A"),  missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u2 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1", "BYS89B ~~ BYS89B"),  missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u3 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1", "BYS89L ~~ BYS89L"),  missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u4 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1", "BYS89R ~~ BYS89R"),  missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u5 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U"),  missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_stric_5i245,fit_cor_stric_5i245u1)
+lavTestLRT(fit_cor_stric_5i245,fit_cor_stric_5i245u2)
+lavTestLRT(fit_cor_stric_5i245,fit_cor_stric_5i245u3)
+lavTestLRT(fit_cor_stric_5i245,fit_cor_stric_5i245u4)
+lavTestLRT(fit_cor_stric_5i245,fit_cor_stric_5i245u5)
+```
+
+```{r, results ='hide'}
+#item 4 is noninvariant
+fit_cor_stric_5i245u51 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89A ~~ BYS89A"), missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u52 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89B ~~ BYS89B"), missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u53 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89L ~~ BYS89L"), missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u54 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R"), missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_stric_5i245u51,fit_cor_stric_5i245u5)
+lavTestLRT(fit_cor_stric_5i245u52,fit_cor_stric_5i245u5)
+lavTestLRT(fit_cor_stric_5i245u53,fit_cor_stric_5i245u5)
+lavTestLRT(fit_cor_stric_5i245u54,fit_cor_stric_5i245u5)
+```
+
+```{r, results = 'hide'}
+# continue searching
+fit_cor_stric_5i245u541 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89A ~~ BYS89A"), missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u542 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89B ~~ BYS89B"), missing='fiml', std.lv= TRUE)
+fit_cor_stric_5i245u543 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89L ~~ BYS89L"), missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_stric_5i245u541,fit_cor_stric_5i245u54)
+lavTestLRT(fit_cor_stric_5i245u542,fit_cor_stric_5i245u54)
+lavTestLRT(fit_cor_stric_5i245u543,fit_cor_stric_5i245u54)
+```
+
+
+```{r, results = 'hide'}
+# Fit the partial strict invariant model (fix unique factor covariances)
+fit_cor_striccov_5i245u54 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals", "residual.covariances"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R"), missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_striccov_5i245u54, fit_cor_stric_5i245u54)
+```
+
+```{r, results='hide'}
+fit_cor_striccov_5i245u54c1 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals", "residual.covariances"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89A ~~ BYS89B"), missing='fiml', std.lv= TRUE)
+fit_cor_striccov_5i245u54c2 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals", "residual.covariances"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89B ~~ BYS89L"), missing='fiml', std.lv= TRUE)
+lavTestLRT(fit_cor_striccov_5i245u54, fit_cor_striccov_5i245u54c1)
+lavTestLRT(fit_cor_striccov_5i245u54, fit_cor_striccov_5i245u54c2)
+```
+
+To conclude, item 1 (BYS89A) and 3 (BYS89L) are strict invariant, item 2 (BYS89B) and 4 (BYS89R) are weak invariant, and item 5 is non-invariant. 
+
+```{r}
+# final frequentist cfa model
+fit_cor_striccov_5i245u54c1 <- cfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals", "residual.covariances"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89A ~~ BYS89B"), missing='fiml', std.lv= TRUE)
+summary(fit_cor_striccov_5i245u54c1, fit.measures = TRUE)
+```
+
+# Step 1: Set ROME for Group Differences
+
+In this section, we preset the Region of Measurement Equivalence (ROME). Since there are no substantive guidelines for the cutoff values, we set the ROME following the convention suggested by Kruschke (2010): $[- 0.1s_{p}, 0.1s{p}]$. Here $s{p}]$ is defined as the pooled standard deviation of the observed sum scores of the psychological test being evaluated. It can be calculated from the following equation $s_{p}=\frac{(n_{k}-1)s_{k}^{2} + (n_{j}-1)s_{j}^{2}}{n_{k}+n_{j}-2}$
+
+```{r}
+# Select female participants
+els_fe_n <- els[(els$Male == 0),]
+# Select male participants
+els_ma_n <- els[(els$Male == 1),]
+# Compute total scores for each female participant
+sum_tosc_fe_n <-rowSums(subset(els_fe_n, select = c(BYS89B, BYS89L, BYS89R, BYS89A, BYS89U)))
+sum_tosc_fe_n <- describe(sum_tosc_fe_n)
+# Number of female participants
+n_female <- sum_tosc_fe_n$n
+# Standard deviation for female group
+sd_female <-sum_tosc_fe_n$sd
+# Compute total scores for each male participant
+sum_tosc_ma_n <-rowSums(subset(els_ma_n, select = c(BYS89B, BYS89L, BYS89R, BYS89A, BYS89U)))
+sum_tosc_ma_n <-describe(sum_tosc_ma_n)
+# Number of male participants
+n_male <- sum_tosc_ma_n$n
+# Standard deviation for male group
+sd_male <-sum_tosc_ma_n$sd
+# Calculate the pooled standard deviation of the observed sum scores
+sd_pool <- sqrt(((n_female-1)*(sd_female^2)+(n_male-1)*(sd_male^2))/(n_female+n_male-2))
+sd_pool
+```
+
+# Step 2: Obtain Parameter Posterior Distributions
+
+## Fit the Bayesian MG-CFA Model
+
+After partial invariance was detected, a Bayesian MG-CFA model was fit to data.
+
+```{r}
+# Fit the Bayesian MG-CFA model
+# bcfa_mod <-bcfa(Model, data = els, group = "Male_n", group.equal = c("loadings", "intercepts","residuals", "residual.covariances"), group.partial = c("Math =~ BYS89U", "BYS89B ~ 1", "BYS89R ~ 1", "BYS89U ~ 1","BYS89U ~~ BYS89U", "BYS89R ~~ BYS89R", "BYS89A ~~ BYS89B"), bcontrol = list(cores = 3), std.lv = TRUE)
+# # # Save the results to file
+#  saveRDS(bcfa_mod, "blava_res_ml.RDS")
+# Read the results from file
+blava_res <- read_rds("blava_res_ml.RDS")
+# Summary of the model
+summary(blava_res, fit.measures = TRUE)
+# MCMC chain output 
+blava_draws <- blavInspect(blava_res, "draws")
+# Combine results from three chains to one chain
+blava_draw_sam <- map_df(blava_draws, as.data.frame)
+```
+
+# Step 3: Compute the Expected Difference in Total Scores 
+
+In this part, we compute the expected difference in total scores conditioned on $\eta$ and obtain its 95% HPDI.
+
+## Sum of Loadings for Each Group
+
+First, the sum of loadings for each group, as well as the group difference in sum of loadings were calculated.
+
+```{r}
+# sum of loadings for female group by indices
+# sum_ld_fe_s <- 1 + blava_draw_sam[,1]+blava_draw_sam[,2]+blava_draw_sam[,3]+blava_draw_sam[,4]
+# hist(sum_ld_fe_s)
+
+# sum of loadings for female group by str_which function
+sum_ld_f <- rowSums(blava_draw_sam[ , str_which(names(blava_draw_sam), "ly")[1:n_ind]])
+hist(sum_ld_f)
+# sum of loadings for male group by str_which function
+sum_ld_m <- rowSums(blava_draw_sam[ , str_which(names(blava_draw_sam), "ly")[(n_ind + 1):(2*n_ind)]])
+hist(sum_ld_m)
+# Group difference in sum of factor loadings
+diff_sum_ldnew_s <- sum_ld_f-sum_ld_m
+hist(diff_sum_ldnew_s)
+```
+
+## Sum of Intercepts for Each Group
+
+Second, the sum of intercepts for each group, as well as the group difference in sum of intercepts were calculated.
+
+```{r}
+# sum of intercepts for female group 
+sum_in_f <- rowSums(blava_draw_sam[ , str_which(names(blava_draw_sam), "Nu")[1:(n_ind)]])
+hist(sum_in_f)
+# sum of intercepts for male group
+sum_in_m <- rowSums(blava_draw_sam[ , str_which(names(blava_draw_sam), "Nu")[(n_ind+1):(n_ind+5)]])
+hist(sum_in_m)
+# Group difference in sum of intercepts
+diff_sum_innew_s <- sum_in_f - sum_in_m
+hist(diff_sum_innew_s, xlim = c(-0.412, 0.412))
+```
+
+## Group Difference in Total Test Scores and 95% HPDI
+
+Third, the expected total test scores for each group and the expected group difference in total test scores were calculated.
+
+```{r}
+# Define function to compute the 95% HPDI for Female
+compute_to_fe_s <- function(eta, si = sum_in_f, sl = sum_ld_f,
+                        prob = 0.95) {
+  tot_sam10 <- sl * eta + si
+  # Compute HPDI:
+  hpdi <- coda::HPDinterval(coda::as.mcmc(tot_sam10), prob = prob)
+  # Return posterior means and HPDI
+  tibble(
+    eta = eta, 
+    mean = mean(tot_sam10), 
+    sd = sd(tot_sam10),
+    ll = hpdi[1], 
+    ul = hpdi[2]
+  )
+}
+compute_to_fe_s(0)
+#Define function to compute the 95% HPDI for Male
+compute_to_ma_s <- function(eta, si = sum_in_m, sl = sum_ld_m,
+                        prob = 0.95) {
+  tot_sam12 <- sl * eta + si
+  # Compute HPDI:
+  hpdi <- coda::HPDinterval(coda::as.mcmc(tot_sam12), prob = prob)
+  # Return posterior means and HPDI
+  tibble(
+    eta = eta, 
+    mean = mean(tot_sam12), 
+    sd = sd(tot_sam12),
+    ll = hpdi[1], 
+    ul = hpdi[2]
+  )
+}
+compute_to_ma_s(0)
+#Define function to compute the 95% HPDI for group difference
+compute_todiffnew_s <- function(eta, si = diff_sum_innew_s, sl = diff_sum_ldnew_s, prob = 0.95) {
+    tot_samdiff <- sl * eta + si
+  # Compute HPDI:
+  hpdi <- coda::HPDinterval(coda::as.mcmc(tot_samdiff), prob = prob)
+  # Return posterior means and HPDI
+  tibble(
+    eta = eta,
+    mean = mean(tot_samdiff), 
+    sd = sd(tot_samdiff),
+    ll = hpdi[1], 
+    ul = hpdi[2]
+  )
+}
+compute_todiffnew_s(0)
+compute_todiffnew_s(2)
+compute_todiffnew_s(-2)
+```
+
+# Step 4: Compare the 95% HPDI with ROME and Determine Measurement Invariance
+
+Two graphs were generated from this section. One is the expected total test scores for female and male (female score - male score), the other is the expected group differences in total test scores. Although there is a slight difference in total scores between females and males with the same trait level of math self-efficacy on this scale, it is practically negligible because the differences across the range of scores are entirely within the preset ROME [-0.412, 0.412]. 
+
+```{r}
+# Randomly draw a large number of etas
+etas <- seq(-2, 2, length.out = 501)  
+df_post_fe_s <- map_df(etas, compute_to_fe_s)
+df_post_ma_s <- map_df(etas, compute_to_ma_s)
+diff_postnew_s <- map_df(etas, compute_todiffnew_s)
+# Plot the results
+ggplot(df_post_fe_s, aes(x = eta, y = mean)) +
+  ylab(labs(y="Expected total test scores"))+
+  geom_ribbon(aes(ymin = ll, ymax = ul), alpha = .3) + 
+  geom_ribbon(data = df_post_ma_s, aes(ymin = ll, ymax = ul), alpha = .3, fill = "red") + 
+  geom_line(data = df_post_ma_s, aes(color = "Male"))+  
+  geom_line(data = df_post_fe_s, aes(color = "Female"))+
+  ggtitle("Total Test Scores for Male and Female")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_colour_manual("Gender", values = c("Male"="red", "Female"="black"),labels = c("Female", "Male")) 
+ggplot(diff_postnew_s, aes(x = eta, y = mean)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), alpha = .3, fill = "grey")+
+  geom_line(data = diff_postnew_s, col = "orange")+
+  geom_hline(yintercept = 0.412)+
+  geom_hline(yintercept = -0.412)+
+  ggtitle("Expected Group Differences in Total Test Scores")+
+  labs(y="Group Difference")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
